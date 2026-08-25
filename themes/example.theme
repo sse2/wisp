@@ -1,0 +1,18 @@
+# wisp theme file — copy to your config dir (next to `config`) as <name>.theme
+# It then appears in Settings → Theme as "<name>". Values are rrggbb hex.
+# Any key you omit inherits the built-in default. Lines starting with # are ignored.
+#
+# config dir:  Windows  %APPDATA%\wisp     macOS  ~/Library/Application Support/wisp
+#              Linux    ~/.config/wisp
+
+bg      = 2b1d2a   # window background
+panel   = 3a2636   # panels, now-playing bar, popups
+header  = 1c1220   # tab bar / headers
+fg      = f4e4d4   # primary text
+dim     = 9a7a86   # secondary / muted text
+accent  = ff8c69   # primary accent (selection, active)
+accent2 = ffd27f   # secondary accent (highlights, shimmer)
+selbg   = 5a3a4a   # selected-row background
+selfg   = ffffff   # selected-row text
+green   = 9acd68   # playing / ok
+red     = ff5c7a   # errors

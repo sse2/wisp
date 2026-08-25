@@ -1,0 +1,21 @@
+[submodule "thirdparty/miniaudio"]
+	path = thirdparty/miniaudio
+	url = https://github.com/mackron/miniaudio.git
+[submodule "thirdparty/cjson"]
+	path = thirdparty/cjson
+	url = https://github.com/DaveGamble/cJSON.git
+[submodule "thirdparty/ogg"]
+	path = thirdparty/ogg
+	url = https://github.com/xiph/ogg.git
+[submodule "thirdparty/opus"]
+	path = thirdparty/opus
+	url = https://github.com/xiph/opus.git
+[submodule "thirdparty/opusfile"]
+	path = thirdparty/opusfile
+	url = https://github.com/xiph/opusfile.git
+[submodule "thirdparty/mbedtls"]
+	path = thirdparty/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git
+[submodule "thirdparty/vorbis"]
+	path = thirdparty/vorbis
+	url = https://github.com/xiph/vorbis.git
