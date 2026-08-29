@@ -1586,6 +1586,8 @@ static void shuffle_all(app *a) {
     for (size_t i = 0; i < n; i++)
         ids[i] = wisp_strdup(wisp_model_track(a->model, (uint32_t)i)->ext_id);
     wisp_core_set_shuffle(a->core, true);
+    a->config.shuffle = true;
+    wisp_config_save(&a->config);
     size_t start = (size_t)(wisp_now_ms() % n);
     for (size_t i = 0; i < a->queue_count; i++)
         free(a->queue_ids[i]);
@@ -1869,6 +1871,8 @@ static void enter_connected(app *a) {
         wisp_core_set_group_fn(a->core, ui_group, a);
         wisp_core_set_crossfade(a->core, a->config.crossfade);
         wisp_core_set_volume(a->core, a->config.volume);
+        wisp_core_set_repeat(a->core, (wisp_repeat)a->config.repeat);
+        wisp_core_set_shuffle(a->core, a->config.shuffle);
     }
     a->actions = wisp_chan_new(sizeof(action), 64);
     a->act_thread = wisp_thread_start(action_run, a);
@@ -2176,6 +2180,8 @@ static bool global_key(app *a, int key) {
         if (a->core) {
             wisp_core_cycle_repeat(a->core);
             wisp_status s = wisp_core_status(a->core);
+            a->config.repeat = (int)s.repeat;
+            wisp_config_save(&a->config);
             toast(a, s.repeat == WISP_REPEAT_ONE   ? "repeat: one"
                      : s.repeat == WISP_REPEAT_ALL ? "repeat: all"
                                                    : "repeat: off");
@@ -2186,6 +2192,8 @@ static bool global_key(app *a, int key) {
         if (a->core) {
             wisp_core_toggle_shuffle(a->core);
             wisp_status s = wisp_core_status(a->core);
+            a->config.shuffle = s.shuffle;
+            wisp_config_save(&a->config);
             toast(a, s.shuffle ? "shuffle: on" : "shuffle: off");
             wisp_status_free(&s);
         }

@@ -24,6 +24,8 @@ typedef struct {
     int viz_type;
     int cache_max_mb;
     char *transcode_format;
+    int repeat;
+    bool shuffle;
 } wisp_config;
 
 void wisp_config_init(wisp_config *cfg);

@@ -43,6 +43,8 @@ void wisp_config_init(wisp_config *cfg) {
     cfg->viz_type = 0;
     cfg->cache_max_mb = 0;
     cfg->transcode_format = NULL;
+    cfg->repeat = 0;
+    cfg->shuffle = false;
 }
 
 wisp_server *wisp_config_add_server(wisp_config *cfg) {
@@ -87,6 +89,10 @@ static void apply(wisp_config *cfg, wisp_server *server, const char *key, const 
         cfg->cache_max_mb = atoi(value);
     else if (!strcmp(key, "transcode_format"))
         set_str(&cfg->transcode_format, value);
+    else if (!strcmp(key, "repeat"))
+        cfg->repeat = atoi(value);
+    else if (!strcmp(key, "shuffle"))
+        cfg->shuffle = atoi(value) != 0;
 }
 
 void wisp_config_load(wisp_config *cfg) {
@@ -167,6 +173,8 @@ bool wisp_config_save(const wisp_config *cfg) {
     sb_addf(&sb, "visualizer = %d\n", cfg->visualizer ? 1 : 0);
     sb_addf(&sb, "viz_type = %d\n", cfg->viz_type);
     sb_addf(&sb, "cache_max_mb = %d\n", cfg->cache_max_mb);
+    sb_addf(&sb, "repeat = %d\n", cfg->repeat);
+    sb_addf(&sb, "shuffle = %d\n", cfg->shuffle ? 1 : 0);
     if (cfg->theme)
         sb_addf(&sb, "theme = %s\n", cfg->theme);
     if (cfg->transcode_format)
