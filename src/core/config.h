@@ -23,6 +23,7 @@ typedef struct {
     bool visualizer;
     int viz_type;
     int cache_max_mb;
+    char *transcode_format;
 } wisp_config;
 
 void wisp_config_init(wisp_config *cfg);

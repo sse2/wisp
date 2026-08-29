@@ -33,8 +33,8 @@ wisp_err wisp_subsonic_get(wisp_subsonic *s, const char *endpoint, const char *e
 wisp_err wisp_subsonic_ping(wisp_subsonic *s, char **server_label);
 wisp_err wisp_subsonic_negotiate_caps(wisp_subsonic *s);
 
-char *wisp_subsonic_stream_url(wisp_subsonic *s, const char *track_id, bool raw, int max_bitrate,
-                               int time_offset);
+char *wisp_subsonic_stream_url(wisp_subsonic *s, const char *track_id, const char *format,
+                               int max_bitrate, int time_offset);
 char *wisp_subsonic_cover_url(wisp_subsonic *s, const char *cover_id, int size);
 
 wisp_err wisp_subsonic_scrobble(wisp_subsonic *s, const char *track_id, bool submission);
@@ -43,6 +43,9 @@ wisp_err wisp_subsonic_set_rating(wisp_subsonic *s, const char *track_id, int ra
 wisp_err wisp_subsonic_create_playlist(wisp_subsonic *s, const char *name, const char *song_id,
                                        char **out_id);
 wisp_err wisp_subsonic_playlist_add(wisp_subsonic *s, const char *playlist_id, const char *song_id);
+wisp_err wisp_subsonic_playlist_remove(wisp_subsonic *s, const char *playlist_id, int index);
+wisp_err wisp_subsonic_playlist_replace(wisp_subsonic *s, const char *playlist_id, const char *name,
+                                        const char *const *song_ids, size_t n);
 wisp_err wisp_subsonic_delete_playlist(wisp_subsonic *s, const char *playlist_id);
 wisp_err wisp_subsonic_rename_playlist(wisp_subsonic *s, const char *playlist_id, const char *name);
 

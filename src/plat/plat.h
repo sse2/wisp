@@ -45,6 +45,8 @@ void wisp_chan_close(wisp_chan *ch);
 uint64_t wisp_now_ms(void);
 void wisp_sleep_ms(uint32_t ms);
 
+void wisp_log(const char *fmt, ...);
+
 typedef enum { WISP_DIR_CONFIG, WISP_DIR_DATA, WISP_DIR_CACHE } wisp_dir;
 char *wisp_dir_path(wisp_dir which);
 

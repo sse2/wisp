@@ -138,6 +138,9 @@ static void download_run(void *p) {
         e->complete = true;
     else
         e->failed = true;
+    wisp_log("download key=%s rc=%d content_length=%lld committed=%lld expected=%lld -> %s", e->key,
+             rc, (long long)total, (long long)e->committed, (long long)e->total,
+             e->complete ? "complete" : "FAILED");
     if (e->writer) {
         fflush(e->writer);
         fclose(e->writer);
@@ -188,6 +191,9 @@ static bool reader_seek(wisp_source *s, int64_t off, int whence) {
     cache_reader *r = s->impl;
     cache_entry *e = r->e;
     wisp_mutex_lock(e->mtx);
+    if (whence == SEEK_END)
+        while (e->total <= 0 && !e->complete && !e->failed)
+            wisp_cond_wait(e->cond, e->mtx);
     int64_t end = e->total > 0 ? e->total : (e->complete ? e->committed : -1);
     if (whence == SEEK_END && end < 0) {
         wisp_mutex_unlock(e->mtx);
@@ -208,7 +214,9 @@ static bool reader_seek(wisp_source *s, int64_t off, int whence) {
     return ok;
 }
 
-static int64_t reader_tell(wisp_source *s) { return ((cache_reader *)s->impl)->off; }
+static int64_t reader_tell(wisp_source *s) {
+    return ((cache_reader *)s->impl)->off;
+}
 
 static int64_t reader_size(wisp_source *s) {
     cache_reader *r = s->impl;
@@ -252,6 +260,7 @@ static wisp_source *make_reader(cache_entry *e) {
 }
 
 wisp_source *wisp_cache_open(wisp_cache *c, const char *key, const char *url, int64_t expected) {
+    wisp_log("cache_open key=%s expected=%lld", key, (long long)expected);
     wisp_mutex_lock(c->mtx);
     cache_entry *e = find_entry(c, key);
     if (e) {
@@ -260,6 +269,7 @@ wisp_source *wisp_cache_open(wisp_cache *c, const char *key, const char *url, in
             char *path = wisp_strdup(e->path);
             wisp_mutex_unlock(e->mtx);
             wisp_mutex_unlock(c->mtx);
+            wisp_log("cache_open key=%s hit complete entry", key);
             wisp_source *s = wisp_source_file(path);
             free(path);
             return s;
@@ -278,12 +288,14 @@ wisp_source *wisp_cache_open(wisp_cache *c, const char *key, const char *url, in
         if (restart)
             start_download(c, e);
         wisp_mutex_unlock(c->mtx);
+        wisp_log("cache_open key=%s reopen existing restart=%d", key, restart);
         return make_reader(e);
     }
 
     char *path = build_path(c, key);
     if (expected > 0 && file_size(path) == expected) {
         wisp_mutex_unlock(c->mtx);
+        wisp_log("cache_open key=%s offline hit on disk (%lld bytes)", key, (long long)expected);
         wisp_source *s = wisp_source_file(path);
         free(path);
         return s;
@@ -308,10 +320,13 @@ wisp_source *wisp_cache_open(wisp_cache *c, const char *key, const char *url, in
     c->entries[c->entry_count++] = e;
     start_download(c, e);
     wisp_mutex_unlock(c->mtx);
+    wisp_log("cache_open key=%s new download started", key);
     return make_reader(e);
 }
 
-static char *pins_path(wisp_cache *c) { return wisp_path_join(c->dir, "pins"); }
+static char *pins_path(wisp_cache *c) {
+    return wisp_path_join(c->dir, "pins");
+}
 
 static int pin_find(wisp_cache *c, const char *key) {
     for (size_t i = 0; i < c->pin_count; i++)
@@ -391,7 +406,8 @@ static void pins_load(wisp_cache *c) {
     free(data);
 }
 
-static cache_entry *entry_new_pinned(wisp_cache *c, const char *key, const char *url, int64_t size) {
+static cache_entry *entry_new_pinned(wisp_cache *c, const char *key, const char *url,
+                                     int64_t size) {
     cache_entry *e = calloc(1, sizeof *e);
     e->mtx = wisp_mutex_new();
     e->cond = wisp_cond_new();

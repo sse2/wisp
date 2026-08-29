@@ -104,7 +104,9 @@ static const char *base_name(const char *path) {
     return b;
 }
 
-static void push(wisp_core *c, wisp_event ev) { wisp_chan_try_send(c->events, &ev); }
+static void push(wisp_core *c, wisp_event ev) {
+    wisp_chan_try_send(c->events, &ev);
+}
 static void push_state(wisp_core *c) {
     push(c, (wisp_event){.type = WISP_EV_STATE, .state = c->cur_state});
 }
@@ -117,10 +119,13 @@ static void end_current(wisp_core *c, wisp_track_reason r) {
         return;
     c->started = false;
     double played = c->last_pos > 0 ? c->last_pos : 0;
-    push(c, (wisp_event){
-                .type = WISP_EV_TRACK_ENDED, .queue_pos = c->cursor, .reason = r, .played = played});
+    push(c,
+         (wisp_event){
+             .type = WISP_EV_TRACK_ENDED, .queue_pos = c->cursor, .reason = r, .played = played});
 }
-static void push_error(wisp_core *c) { push(c, (wisp_event){.type = WISP_EV_ERROR}); }
+static void push_error(wisp_core *c) {
+    push(c, (wisp_event){.type = WISP_EV_ERROR});
+}
 
 static void free_queue(wisp_core *c) {
     for (size_t i = 0; i < c->queue_len; i++)
@@ -217,9 +222,13 @@ static void load_track(wisp_core *c, wisp_track_reason reason) {
     wisp_source *src = resolve(c, c->queue[c->cursor]);
     c->cur_token = ++c->token_next;
     if (!src) {
+        wisp_log("core load_track cursor=%zu item=%s token=%llu resolve NULL -> error", c->cursor,
+                 c->queue[c->cursor], (unsigned long long)c->cur_token);
         push_error(c);
         return;
     }
+    wisp_log("core load_track cursor=%zu item=%s token=%llu reason=%d", c->cursor,
+             c->queue[c->cursor], (unsigned long long)c->cur_token, (int)reason);
     wisp_engine_open(c->engine, src, c->cur_token);
     if (c->intent == INTENT_PLAYING)
         wisp_engine_play(c->engine);
@@ -488,6 +497,8 @@ static void poll_engine(wisp_core *c) {
                 c->pending_advance = true;
             break;
         case WISP_ENGINE_ERROR:
+            wisp_log("core engine ERROR token=%llu (current=%llu)", (unsigned long long)ev.token,
+                     (unsigned long long)c->cur_token);
             if (ev.token == c->cur_token) {
                 push_error(c);
                 c->intent = INTENT_STOPPED;
@@ -617,7 +628,9 @@ void wisp_core_set_crossfade(wisp_core *c, double seconds) {
     wisp_engine_set_crossfade(c->engine, c->crossfade);
 }
 
-static void send(wisp_core *c, core_msg m) { wisp_chan_send(c->msgs, &m); }
+static void send(wisp_core *c, core_msg m) {
+    wisp_chan_send(c->msgs, &m);
+}
 
 static char **dup_paths(const char **paths, size_t n) {
     char **out = malloc(n * sizeof(char *));
@@ -635,15 +648,28 @@ void wisp_core_queue_add(wisp_core *c, const char **paths, size_t n) {
     send(c, (core_msg){.type = M_QUEUE_ADD, .paths = dup_paths(paths, n), .path_count = n});
 }
 void wisp_core_queue_play(wisp_core *c, const char **paths, size_t n, size_t start) {
-    send(c, (core_msg){
-                .type = M_QUEUE_PLAY, .paths = dup_paths(paths, n), .path_count = n, .index = start});
+    send(c,
+         (core_msg){
+             .type = M_QUEUE_PLAY, .paths = dup_paths(paths, n), .path_count = n, .index = start});
 }
-void wisp_core_play(wisp_core *c) { send(c, (core_msg){.type = M_PLAY}); }
-void wisp_core_pause(wisp_core *c) { send(c, (core_msg){.type = M_PAUSE}); }
-void wisp_core_toggle_pause(wisp_core *c) { send(c, (core_msg){.type = M_TOGGLE}); }
-void wisp_core_stop(wisp_core *c) { send(c, (core_msg){.type = M_STOP}); }
-void wisp_core_next(wisp_core *c) { send(c, (core_msg){.type = M_NEXT}); }
-void wisp_core_prev(wisp_core *c) { send(c, (core_msg){.type = M_PREV}); }
+void wisp_core_play(wisp_core *c) {
+    send(c, (core_msg){.type = M_PLAY});
+}
+void wisp_core_pause(wisp_core *c) {
+    send(c, (core_msg){.type = M_PAUSE});
+}
+void wisp_core_toggle_pause(wisp_core *c) {
+    send(c, (core_msg){.type = M_TOGGLE});
+}
+void wisp_core_stop(wisp_core *c) {
+    send(c, (core_msg){.type = M_STOP});
+}
+void wisp_core_next(wisp_core *c) {
+    send(c, (core_msg){.type = M_NEXT});
+}
+void wisp_core_prev(wisp_core *c) {
+    send(c, (core_msg){.type = M_PREV});
+}
 void wisp_core_jump_to(wisp_core *c, size_t queue_index) {
     send(c, (core_msg){.type = M_JUMP, .index = queue_index});
 }
@@ -717,9 +743,15 @@ bool wisp_core_poll_event(wisp_core *c, wisp_event *out) {
     return wisp_chan_try_recv(c->events, out);
 }
 
-float wisp_core_level(wisp_core *c) { return wisp_output_level(c->out); }
-int wisp_core_viz(wisp_core *c, float *out, int max) { return wisp_output_viz(c->out, out, max); }
+float wisp_core_level(wisp_core *c) {
+    return wisp_output_level(c->out);
+}
+int wisp_core_viz(wisp_core *c, float *out, int max) {
+    return wisp_output_viz(c->out, out, max);
+}
 int wisp_core_spectrum(wisp_core *c, float *out, int n) {
     return wisp_output_spectrum(c->out, out, n);
 }
-int wisp_core_pcm(wisp_core *c, float *out, int n) { return wisp_output_pcm(c->out, out, n); }
+int wisp_core_pcm(wisp_core *c, float *out, int n) {
+    return wisp_output_pcm(c->out, out, n);
+}

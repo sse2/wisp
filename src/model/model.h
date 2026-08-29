@@ -68,6 +68,8 @@ uint32_t wisp_model_add_album(wisp_model *m, const wisp_album *in);
 uint32_t wisp_model_add_track(wisp_model *m, const wisp_track *in);
 uint32_t wisp_model_add_playlist(wisp_model *m, const char *ext_id, const char *name);
 void wisp_model_playlist_add_track(wisp_model *m, uint32_t playlist_id, const char *track_ext_id);
+void wisp_model_playlist_remove_track(wisp_model *m, uint32_t playlist_id, size_t index);
+void wisp_model_playlist_move_track(wisp_model *m, uint32_t playlist_id, size_t index, int dir);
 bool wisp_model_find_artist(wisp_model *m, const char *ext_id, uint32_t *out);
 bool wisp_model_find_album(wisp_model *m, const char *ext_id, uint32_t *out);
 bool wisp_model_find_track(wisp_model *m, const char *ext_id, uint32_t *out);

@@ -73,8 +73,8 @@ static char *auth_params(wisp_subsonic *s) {
     md5_hex(salted, token);
     free(salted);
     char *user = url_encode(s->username);
-    char *params = wisp_aprintf("u=%s&t=%s&s=%s&c=%s&v=%s&f=json", user, token, salt, s->client,
-                                s->version);
+    char *params =
+        wisp_aprintf("u=%s&t=%s&s=%s&c=%s&v=%s&f=json", user, token, salt, s->client, s->version);
     free(user);
     return params;
 }
@@ -90,8 +90,7 @@ static wisp_err classify(cJSON *response) {
         if (c && cJSON_IsNumber(c))
             code = c->valueint;
     }
-    return (code == 40 || code == 41 || code == 44 || code == 50) ? WISP_ERR_AUTH
-                                                                  : WISP_ERR_SERVER;
+    return (code == 40 || code == 41 || code == 44 || code == 50) ? WISP_ERR_AUTH : WISP_ERR_SERVER;
 }
 
 wisp_err wisp_subsonic_get(wisp_subsonic *s, const char *endpoint, const char *extra,
@@ -174,13 +173,15 @@ wisp_err wisp_subsonic_negotiate_caps(wisp_subsonic *s) {
     return WISP_OK;
 }
 
-char *wisp_subsonic_stream_url(wisp_subsonic *s, const char *track_id, bool raw, int max_bitrate,
-                               int time_offset) {
+char *wisp_subsonic_stream_url(wisp_subsonic *s, const char *track_id, const char *format,
+                               int max_bitrate, int time_offset) {
     char *params = auth_params(s);
     char *id = url_encode(track_id);
     char *extra = wisp_strdup("");
-    if (raw) {
-        char *n = wisp_aprintf("%s&format=raw", extra);
+    if (format && *format) {
+        char *efmt = url_encode(format);
+        char *n = wisp_aprintf("%s&format=%s", extra, efmt);
+        free(efmt);
         free(extra);
         extra = n;
     }
@@ -292,6 +293,36 @@ wisp_err wisp_subsonic_playlist_add(wisp_subsonic *s, const char *playlist_id,
     return e;
 }
 
+wisp_err wisp_subsonic_playlist_remove(wisp_subsonic *s, const char *playlist_id, int index) {
+    char *epl = url_encode(playlist_id);
+    char *extra = wisp_aprintf("playlistId=%s&songIndexToRemove=%d", epl, index);
+    wisp_err e = simple_call(s, "updatePlaylist.view", extra);
+    free(epl);
+    free(extra);
+    return e;
+}
+
+wisp_err wisp_subsonic_playlist_replace(wisp_subsonic *s, const char *playlist_id, const char *name,
+                                        const char *const *song_ids, size_t n) {
+    char *epl = url_encode(playlist_id);
+    char *ename = url_encode(name ? name : "");
+    char *extra = wisp_aprintf("playlistId=%s&name=%s", epl, ename);
+    free(epl);
+    free(ename);
+    for (size_t i = 0; i < n && extra; i++) {
+        char *esong = url_encode(song_ids[i]);
+        char *next = wisp_aprintf("%s&songId=%s", extra, esong);
+        free(esong);
+        free(extra);
+        extra = next;
+    }
+    if (!extra)
+        return WISP_ERR_OOM;
+    wisp_err e = simple_call(s, "createPlaylist.view", extra);
+    free(extra);
+    return e;
+}
+
 wisp_err wisp_subsonic_delete_playlist(wisp_subsonic *s, const char *playlist_id) {
     char *id = url_encode(playlist_id);
     char *extra = wisp_aprintf("id=%s", id);
@@ -341,8 +372,10 @@ wisp_err wisp_subsonic_get_lyrics(wisp_subsonic *s, const char *track_id, wisp_l
                     break;
                 cJSON *start = cJSON_GetObjectItem(ln, "start");
                 cJSON *value = cJSON_GetObjectItem(ln, "value");
-                out->lines[i].ms = start && cJSON_IsNumber(start) ? (int64_t)start->valuedouble : -1;
-                out->lines[i].text = wisp_strdup(value && value->valuestring ? value->valuestring : "");
+                out->lines[i].ms =
+                    start && cJSON_IsNumber(start) ? (int64_t)start->valuedouble : -1;
+                out->lines[i].text =
+                    wisp_strdup(value && value->valuestring ? value->valuestring : "");
                 i++;
             }
             out->count = i;

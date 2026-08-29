@@ -42,6 +42,7 @@ void wisp_config_init(wisp_config *cfg) {
     cfg->visualizer = true;
     cfg->viz_type = 0;
     cfg->cache_max_mb = 0;
+    cfg->transcode_format = NULL;
 }
 
 wisp_server *wisp_config_add_server(wisp_config *cfg) {
@@ -84,6 +85,8 @@ static void apply(wisp_config *cfg, wisp_server *server, const char *key, const 
         cfg->viz_type = atoi(value);
     else if (!strcmp(key, "cache_max_mb"))
         cfg->cache_max_mb = atoi(value);
+    else if (!strcmp(key, "transcode_format"))
+        set_str(&cfg->transcode_format, value);
 }
 
 void wisp_config_load(wisp_config *cfg) {
@@ -166,6 +169,8 @@ bool wisp_config_save(const wisp_config *cfg) {
     sb_addf(&sb, "cache_max_mb = %d\n", cfg->cache_max_mb);
     if (cfg->theme)
         sb_addf(&sb, "theme = %s\n", cfg->theme);
+    if (cfg->transcode_format)
+        sb_addf(&sb, "transcode_format = %s\n", cfg->transcode_format);
     if (cfg->device_id)
         sb_addf(&sb, "device_id = %s\n", cfg->device_id);
     for (size_t i = 0; i < cfg->server_count; i++) {
@@ -192,5 +197,6 @@ void wisp_config_free(wisp_config *cfg) {
     free(cfg->servers);
     free(cfg->theme);
     free(cfg->device_id);
+    free(cfg->transcode_format);
     wisp_config_init(cfg);
 }

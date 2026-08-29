@@ -1,5 +1,7 @@
 #include "decoders.h"
 
+#include "plat/plat.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -76,8 +78,11 @@ bool wisp_decoder_open(wisp_decoder *d, wisp_source *s, uint32_t rate, uint32_t 
     cfg.customBackendCount = 2;
     cfg.pCustomBackendUserData = NULL;
 
-    if (ma_decoder_init_vfs((ma_vfs *)&d->vfs, "wisp", &cfg, &d->ma) != MA_SUCCESS)
+    ma_result r = ma_decoder_init_vfs((ma_vfs *)&d->vfs, "wisp", &cfg, &d->ma);
+    if (r != MA_SUCCESS) {
+        wisp_log("decoder init failed ma_result=%d", (int)r);
         return false;
+    }
     d->open = true;
     return true;
 }

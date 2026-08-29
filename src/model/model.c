@@ -91,7 +91,9 @@ struct wisp_model {
     char **track_fold;
 };
 
-wisp_model *wisp_model_new(void) { return calloc(1, sizeof(wisp_model)); }
+wisp_model *wisp_model_new(void) {
+    return calloc(1, sizeof(wisp_model));
+}
 
 void wisp_model_clear(wisp_model *m) {
     for (size_t i = 0; i < m->artist_count; i++) {
@@ -220,6 +222,29 @@ void wisp_model_playlist_add_track(wisp_model *m, uint32_t playlist_id, const ch
     push_id(&p->track_ids, &p->track_count, tid);
 }
 
+void wisp_model_playlist_remove_track(wisp_model *m, uint32_t playlist_id, size_t index) {
+    if (playlist_id >= m->playlist_count)
+        return;
+    wisp_playlist *p = &m->playlists[playlist_id];
+    if (index >= p->track_count)
+        return;
+    for (size_t i = index; i + 1 < p->track_count; i++)
+        p->track_ids[i] = p->track_ids[i + 1];
+    p->track_count--;
+}
+
+void wisp_model_playlist_move_track(wisp_model *m, uint32_t playlist_id, size_t index, int dir) {
+    if (playlist_id >= m->playlist_count)
+        return;
+    wisp_playlist *p = &m->playlists[playlist_id];
+    int64_t j = (int64_t)index + dir;
+    if (index >= p->track_count || j < 0 || (size_t)j >= p->track_count)
+        return;
+    uint32_t tmp = p->track_ids[index];
+    p->track_ids[index] = p->track_ids[(size_t)j];
+    p->track_ids[(size_t)j] = tmp;
+}
+
 bool wisp_model_find_artist(wisp_model *m, const char *ext_id, uint32_t *out) {
     return smap_get(&m->artist_map, ext_id, out);
 }
@@ -262,28 +287,36 @@ void wisp_model_finalize(wisp_model *m) {
         if (t->album_id < m->album_count)
             push_id(&m->albums[t->album_id].track_ids, &m->albums[t->album_id].track_count,
                     (uint32_t)i);
-        char *combined = wisp_aprintf("%s %s %s", t->title ? t->title : "",
-                                      t->artist_name ? t->artist_name : "",
-                                      t->album_name ? t->album_name : "");
+        char *combined =
+            wisp_aprintf("%s %s %s", t->title ? t->title : "", t->artist_name ? t->artist_name : "",
+                         t->album_name ? t->album_name : "");
         m->track_fold[i] = wisp_fold(combined);
         free(combined);
     }
 }
 
-size_t wisp_model_artist_count(wisp_model *m) { return m->artist_count; }
+size_t wisp_model_artist_count(wisp_model *m) {
+    return m->artist_count;
+}
 const wisp_artist *wisp_model_artist(wisp_model *m, uint32_t id) {
     return id < m->artist_count ? &m->artists[id] : NULL;
 }
-size_t wisp_model_album_count(wisp_model *m) { return m->album_count; }
+size_t wisp_model_album_count(wisp_model *m) {
+    return m->album_count;
+}
 const wisp_album *wisp_model_album(wisp_model *m, uint32_t id) {
     return id < m->album_count ? &m->albums[id] : NULL;
 }
-size_t wisp_model_track_count(wisp_model *m) { return m->track_count; }
+size_t wisp_model_track_count(wisp_model *m) {
+    return m->track_count;
+}
 const wisp_track *wisp_model_track(wisp_model *m, uint32_t id) {
     return id < m->track_count ? &m->tracks[id] : NULL;
 }
 
-size_t wisp_model_playlist_count(wisp_model *m) { return m->playlist_count; }
+size_t wisp_model_playlist_count(wisp_model *m) {
+    return m->playlist_count;
+}
 const wisp_playlist *wisp_model_playlist(wisp_model *m, uint32_t id) {
     return id < m->playlist_count ? &m->playlists[id] : NULL;
 }

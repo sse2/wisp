@@ -393,9 +393,12 @@ static void hard_open(wisp_engine *e, wisp_source *src, uint64_t token) {
     wisp_output_set_draining(e->out, false);
     e->cur.dec = decoder_open_heap(e, src);
     if (!e->cur.dec) {
+        wisp_log("engine hard_open token=%llu decoder open FAILED", (unsigned long long)token);
         emit(e, WISP_ENGINE_ERROR, token);
         return;
     }
+    wisp_log("engine hard_open token=%llu ok len=%llu frames", (unsigned long long)token,
+             (unsigned long long)wisp_decoder_length(e->cur.dec));
     e->anchor_base = flush_and_anchor(e);
     e->produced = 0;
     set_marker(e, e->anchor_base, 0, token);
@@ -553,7 +556,9 @@ void wisp_engine_free(wisp_engine *e) {
     free(e);
 }
 
-static void send(wisp_engine *e, engine_cmd c) { wisp_chan_send(e->cmds, &c); }
+static void send(wisp_engine *e, engine_cmd c) {
+    wisp_chan_send(e->cmds, &c);
+}
 
 void wisp_engine_open(wisp_engine *e, wisp_source *src, uint64_t token) {
     send(e, (engine_cmd){.type = CMD_OPEN, .src = src, .token = token});
@@ -561,13 +566,21 @@ void wisp_engine_open(wisp_engine *e, wisp_source *src, uint64_t token) {
 void wisp_engine_set_next(wisp_engine *e, wisp_source *src, uint64_t token, bool splice_only) {
     send(e, (engine_cmd){.type = CMD_SET_NEXT, .src = src, .token = token, .flag = splice_only});
 }
-void wisp_engine_cancel_next(wisp_engine *e) { send(e, (engine_cmd){.type = CMD_CANCEL_NEXT}); }
+void wisp_engine_cancel_next(wisp_engine *e) {
+    send(e, (engine_cmd){.type = CMD_CANCEL_NEXT});
+}
 void wisp_engine_set_crossfade(wisp_engine *e, double seconds) {
     send(e, (engine_cmd){.type = CMD_CROSSFADE, .seconds = seconds});
 }
-void wisp_engine_play(wisp_engine *e) { send(e, (engine_cmd){.type = CMD_PLAY}); }
-void wisp_engine_pause(wisp_engine *e) { send(e, (engine_cmd){.type = CMD_PAUSE}); }
-void wisp_engine_stop(wisp_engine *e) { send(e, (engine_cmd){.type = CMD_STOP}); }
+void wisp_engine_play(wisp_engine *e) {
+    send(e, (engine_cmd){.type = CMD_PLAY});
+}
+void wisp_engine_pause(wisp_engine *e) {
+    send(e, (engine_cmd){.type = CMD_PAUSE});
+}
+void wisp_engine_stop(wisp_engine *e) {
+    send(e, (engine_cmd){.type = CMD_STOP});
+}
 void wisp_engine_seek(wisp_engine *e, double seconds) {
     send(e, (engine_cmd){.type = CMD_SEEK, .seconds = seconds});
 }
@@ -588,4 +601,6 @@ wisp_engine_pos wisp_engine_position(wisp_engine *e) {
     return p;
 }
 
-bool wisp_engine_drained(wisp_engine *e) { return atomic_load(&e->drained); }
+bool wisp_engine_drained(wisp_engine *e) {
+    return atomic_load(&e->drained);
+}

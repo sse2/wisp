@@ -24,8 +24,8 @@ typedef struct {
 } theme;
 
 static theme theme_default(void) {
-    return (theme){0x1e1e2e, 0x181825, 0x11111b, 0xcdd6f4, 0x6c7086, 0x89b4fa, 0xf5c2e7,
-                   0x45475a, 0xffffff, 0xa6e3a1, 0xf38ba8};
+    return (theme){0x1e1e2e, 0x181825, 0x11111b, 0xcdd6f4, 0x6c7086, 0x89b4fa,
+                   0xf5c2e7, 0x45475a, 0xffffff, 0xa6e3a1, 0xf38ba8};
 }
 
 static const char *VIZ_NAMES[] = {"bars", "mirror", "scope", "peaks"};
@@ -43,6 +43,8 @@ typedef enum {
     ACT_RATE,
     ACT_LYRICS,
     ACT_PL_ADD,
+    ACT_PL_REMOVE,
+    ACT_PL_REORDER,
     ACT_PL_CREATE,
     ACT_PL_DELETE,
     ACT_PL_RENAME,
@@ -150,6 +152,7 @@ typedef struct {
     int confirm_kind;
     char confirm_ext[256];
     uint32_t confirm_id;
+    int confirm_index;
 
     float peaks[VIZ_MAX];
 
@@ -166,8 +169,12 @@ static const char *SPINNER = "|/-\\";
 static const char *BRAILLE = "\xe2\xa0\x8b\xe2\xa0\x99\xe2\xa0\xb9\xe2\xa0\xb8\xe2\xa0\xbc"
                              "\xe2\xa0\xb4\xe2\xa0\xa6\xe2\xa0\xa7\xe2\xa0\x87\xe2\xa0\x8f";
 
-static uint64_t anim(app *a) { return a->config.reduced_motion ? 0 : a->frame; }
-static bool viz_on(app *a) { return a->config.visualizer && !a->config.reduced_motion; }
+static uint64_t anim(app *a) {
+    return a->config.reduced_motion ? 0 : a->frame;
+}
+static bool viz_on(app *a) {
+    return a->config.visualizer && !a->config.reduced_motion;
+}
 
 static uint32_t lerp_rgb(uint32_t a, uint32_t b, float t) {
     if (t < 0)
@@ -176,11 +183,14 @@ static uint32_t lerp_rgb(uint32_t a, uint32_t b, float t) {
         t = 1;
     int ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
     int br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
-    int r = (int)(ar + (br - ar) * t), g = (int)(ag + (bg - ag) * t), bl = (int)(ab + (bb - ab) * t);
+    int r = (int)(ar + (br - ar) * t), g = (int)(ag + (bg - ag) * t),
+        bl = (int)(ab + (bb - ab) * t);
     return (uint32_t)((r << 16) | (g << 8) | bl);
 }
 
-static bool motion(app *a) { return !a->config.reduced_motion && wisp_screen_truecolor(a->screen); }
+static bool motion(app *a) {
+    return !a->config.reduced_motion && wisp_screen_truecolor(a->screen);
+}
 
 static uint32_t shimmer(app *a, uint32_t base, uint32_t hi, int i, int span) {
     if (!motion(a))
@@ -313,11 +323,17 @@ static bool decodable(const char *suffix) {
     return false;
 }
 
+static const char *transcode_fmt(app *a) {
+    const char *f = a->config.transcode_format;
+    return f && *f ? f : "mp3";
+}
+
 static char *stream_url_for(app *a, const wisp_track *t, bool *raw_out) {
     bool raw = decodable(t->suffix);
     if (raw_out)
         *raw_out = raw;
-    return wisp_subsonic_stream_url(&a->sub, t->ext_id, raw, 0, 0);
+    return wisp_subsonic_stream_url(&a->sub, t->ext_id, raw ? "raw" : transcode_fmt(a),
+                                    raw ? 0 : 320, 0);
 }
 
 static wisp_source *ui_provider(void *ctx, const char *item) {
@@ -331,6 +347,11 @@ static wisp_source *ui_provider(void *ctx, const char *item) {
         char *url = stream_url_for(a, t, &raw);
         s = wisp_cache_open(a->cache, item, url, raw ? t->size : 0);
         free(url);
+        wisp_log("provider item=%s title=\"%s\" suffix=%s raw=%d expected=%lld -> %s", item,
+                 t->title ? t->title : "", t->suffix ? t->suffix : "?", raw,
+                 (long long)(raw ? t->size : 0), s ? "source" : "NULL");
+    } else {
+        wisp_log("provider item=%s NOT FOUND in model", item);
     }
     wisp_mutex_unlock(a->model_mtx);
     return s;
@@ -484,8 +505,8 @@ static void draw_track_2line(app *a, int x, int y, int w, const wisp_track *t, b
     uint32_t fg = sel ? a->th.selfg : playing ? a->th.accent : a->th.fg;
     wisp_screen_fill(a->screen, x, y, w, 2, ' ', fg, bg, 0);
     if (playing)
-        wisp_screen_text(a->screen, x + 1, y, 2, "\xe2\x96\xb6", pulse(a, a->th.accent, a->th.accent2),
-                         bg, 0);
+        wisp_screen_text(a->screen, x + 1, y, 2, "\xe2\x96\xb6",
+                         pulse(a, a->th.accent, a->th.accent2), bg, 0);
     char l1[256];
     snprintf(l1, sizeof l1, "%s%s", t->starred ? "\xe2\x98\x85 " : "", t->title ? t->title : "?");
     wisp_screen_text(a->screen, x + 3, y, w - 4, l1, fg, bg, sel || playing ? WISP_ATTR_BOLD : 0);
@@ -700,7 +721,7 @@ static void draw_now_bar(app *a) {
         artist[0] = '\0';
     }
 
-    uint32_t icfg = st == WISP_STATE_PLAYING    ? pulse(a, a->th.green, a->th.accent2)
+    uint32_t icfg = st == WISP_STATE_PLAYING     ? pulse(a, a->th.green, a->th.accent2)
                     : st == WISP_STATE_BUFFERING ? a->th.accent2
                                                  : a->th.dim;
     if (st == WISP_STATE_BUFFERING) {
@@ -732,9 +753,8 @@ static void draw_now_bar(app *a) {
         draw_bar(a, bar_x, y1, bar_w, dur > 0 ? pos / dur : 0, a->th.accent, a->th.selbg);
     wisp_screen_cell(a->screen, a->w - 20, y1, 0x21c4, s_shuffle ? a->th.accent : a->th.selbg,
                      a->th.panel, 0);
-    wisp_screen_cell(a->screen, a->w - 18, y1, 0x21bb, s_repeat != WISP_REPEAT_OFF ? a->th.accent
-                                                                                   : a->th.selbg,
-                     a->th.panel, 0);
+    wisp_screen_cell(a->screen, a->w - 18, y1, 0x21bb,
+                     s_repeat != WISP_REPEAT_OFF ? a->th.accent : a->th.selbg, a->th.panel, 0);
     if (s_repeat == WISP_REPEAT_ONE)
         wisp_screen_cell(a->screen, a->w - 17, y1, '1', a->th.accent, a->th.panel, 0);
     char vbuf[16];
@@ -778,7 +798,8 @@ static void draw_pane(app *a, int x, int w, const char *title, int pane) {
         if (pane == 2 && idx < count) {
             const wisp_album *al = wisp_model_album(a->model, cur_album(a));
             if (al && idx < (int)al->track_count)
-                playing = is_playing_track(a, wisp_model_track(a->model, al->track_ids[idx])->ext_id);
+                playing =
+                    is_playing_track(a, wisp_model_track(a->model, al->track_ids[idx])->ext_id);
         }
         if (playing && !(selected && a->pane == pane))
             fg = a->th.accent;
@@ -818,8 +839,9 @@ static void draw_library(app *a) {
     draw_pane(a, aw + bw, tw, "Tracks", 2);
     if (a->find_active)
         draw_find_bar(a);
-    draw_hint(a, "\xe2\x86\x91\xe2\x86\x93 move  \xe2\x86\x90\xe2\x86\x92 pane  Enter play  / find  "
-                 "a +playlist  s star  P pin  v viz  S settings  ? help");
+    draw_hint(a,
+              "\xe2\x86\x91\xe2\x86\x93 move  \xe2\x86\x90\xe2\x86\x92 pane  Enter play  / find  "
+              "a +playlist  s star  P pin  v viz  S settings  ? help");
 }
 
 /* ---- home ---- */
@@ -901,7 +923,10 @@ static void draw_home_section(app *a, int y, const char *title, int sec, int car
         wisp_screen_fill(a->screen, cx, y + 1, cardw - 1, 2, ' ', a->th.fg, bg, 0);
         char name[128], sub[128];
         home_label(a, sec, idx, name, sizeof name, sub, sizeof sub);
-        uint32_t nfg = sec == 0 ? a->th.green : sel ? a->th.selfg : playing ? a->th.accent : a->th.fg;
+        uint32_t nfg = sec == 0  ? a->th.green
+                       : sel     ? a->th.selfg
+                       : playing ? a->th.accent
+                                 : a->th.fg;
         if (playing)
             wisp_screen_text(a->screen, cx, y + 1, 2, "\xe2\x96\xb6",
                              pulse(a, a->th.accent, a->th.accent2), bg, 0);
@@ -1047,28 +1072,35 @@ static void draw_nowplaying(app *a) {
     draw_np_title(a, tx, cy, a->w - tx - 2, title, playing);
     np_text(a, 2, cy + 1, a->w - 4, artist, a->th.dim, 0);
 
-    char badge[64] = "";
+    char badge[96] = "";
+    bool transcoded = false;
     if (a->core && s.queue_pos < a->queue_count) {
         uint32_t tid;
         if (wisp_model_find_track(a->model, a->queue_ids[s.queue_pos], &tid)) {
             const wisp_track *t = wisp_model_track(a->model, tid);
             const char *sfx = t->suffix ? t->suffix : "";
+            transcoded = *sfx && !decodable(sfx);
+            char src[64];
             if (t->bit_depth > 0 && t->sampling_rate > 0)
-                snprintf(badge, sizeof badge, "%d/%gkHz %s", t->bit_depth,
-                         t->sampling_rate / 1000.0, sfx);
+                snprintf(src, sizeof src, "%d/%gkHz %s", t->bit_depth, t->sampling_rate / 1000.0,
+                         sfx);
             else if (t->sampling_rate > 0)
-                snprintf(badge, sizeof badge, "%gkHz %s", t->sampling_rate / 1000.0, sfx);
+                snprintf(src, sizeof src, "%gkHz %s", t->sampling_rate / 1000.0, sfx);
             else if (t->bit_rate > 0)
-                snprintf(badge, sizeof badge, "%s \xc2\xb7 %dkbps", sfx, t->bit_rate);
-            else if (*sfx)
-                snprintf(badge, sizeof badge, "%s", sfx);
+                snprintf(src, sizeof src, "%s \xc2\xb7 %dkbps", sfx, t->bit_rate);
+            else
+                snprintf(src, sizeof src, "%s", sfx);
+            if (transcoded)
+                snprintf(badge, sizeof badge, "%s \xe2\x86\x92 %s", src, transcode_fmt(a));
+            else
+                snprintf(badge, sizeof badge, "%s", src);
         }
     }
     if (badge[0]) {
         int bl = (int)strlen(badge);
         int bx = a->w - 8 - bl;
         if (bx > 22)
-            np_text(a, bx, cy, bl, badge, a->th.dim, 0);
+            np_text(a, bx, cy, bl, badge, transcoded ? a->th.accent : a->th.dim, 0);
     }
 
     uint32_t shc = s.shuffle ? a->th.accent : a->th.selbg;
@@ -1161,7 +1193,8 @@ static void draw_playlists(app *a) {
         int yy = 2 + i;
         bool sel = idx == a->pl_sel[0];
         bool act = sel && a->pl_pane == 0;
-        uint32_t fg = act ? a->th.selfg : a->th.fg, bg = sel ? (act ? a->th.selbg : a->th.panel) : a->th.bg;
+        uint32_t fg = act ? a->th.selfg : a->th.fg,
+                 bg = sel ? (act ? a->th.selbg : a->th.panel) : a->th.bg;
         wisp_screen_fill(a->screen, 0, yy, lw, 1, ' ', fg, bg, 0);
         if (idx < pcount) {
             const wisp_playlist *p = wisp_model_playlist(a->model, (uint32_t)idx);
@@ -1194,8 +1227,12 @@ static void draw_playlists(app *a) {
         const wisp_track *t = wisp_model_track(a->model, p->track_ids[idx]);
         draw_track_2line(a, lw, yy, a->w - lw, t, idx == a->pl_sel[1] && a->pl_pane == 1);
     }
-    draw_hint(a, "\xe2\x86\x91\xe2\x86\x93 move  Enter play  c new  e rename  d delete  a "
-                 "+playlist  Tab views");
+    if (a->pl_pane == 1)
+        draw_hint(a, "\xe2\x86\x91\xe2\x86\x93 select  Enter play  x remove  K/J reorder  a "
+                     "+playlist  Tab views");
+    else
+        draw_hint(a, "\xe2\x86\x91\xe2\x86\x93 move  Enter open  c new  e rename  d delete  Tab "
+                     "views");
 }
 
 static void draw_detail(app *a) {
@@ -1243,6 +1280,7 @@ static void draw_help(app *a) {
         {"[ / ]", "rate down / up"},
         {"a", "add track to playlist"},
         {"c / e / d", "new / rename / delete playlist"},
+        {"x / K J", "remove / reorder in playlist"},
         {"r / z", "repeat / shuffle"},
         {"P", "pin album offline"},
         {"v", "cycle visualizer"},
@@ -1271,7 +1309,7 @@ static void draw_settings(app *a) {
     wisp_screen_text(a->screen, cx + 2, cy + 1, cw - 4, "Settings", a->th.accent2, a->th.panel,
                      WISP_ATTR_BOLD);
 
-    char vals[10][64];
+    char vals[11][64];
     if (a->config.crossfade <= 0)
         snprintf(vals[0], 64, "off");
     else
@@ -1286,17 +1324,19 @@ static void draw_settings(app *a) {
         snprintf(vals[5], 64, "%.1f GB", a->config.cache_max_mb / 1024.0);
     else
         snprintf(vals[5], 64, "%d MB", a->config.cache_max_mb);
-    snprintf(vals[6], 64, "%s", a->st_name);
-    snprintf(vals[7], 64, "%s", a->st_url);
-    snprintf(vals[8], 64, "%s", a->st_user);
+    snprintf(vals[6], 64, "%s", transcode_fmt(a));
+    snprintf(vals[7], 64, "%s", a->st_name);
+    snprintf(vals[8], 64, "%s", a->st_url);
+    snprintf(vals[9], 64, "%s", a->st_user);
     size_t pl = strlen(a->st_pass);
     for (size_t k = 0; k < pl && k < 63; k++)
-        vals[9][k] = '*';
-    vals[9][pl < 63 ? pl : 63] = '\0';
-    const char *labels[] = {"Crossfade", "Theme",       "Reduced motion", "Visualizer", "Viz type",
-                            "Cache limit", "Server name", "URL",           "Username",   "Password"};
-    bool choice[] = {true, true, true, true, true, true, false, false, false, false};
-    for (int i = 0; i < 10; i++) {
+        vals[10][k] = '*';
+    vals[10][pl < 63 ? pl : 63] = '\0';
+    const char *labels[] = {"Crossfade", "Theme",       "Reduced motion", "Visualizer",
+                            "Viz type",  "Cache limit", "Transcode to",   "Server name",
+                            "URL",       "Username",    "Password"};
+    bool choice[] = {true, true, true, true, true, true, true, false, false, false, false};
+    for (int i = 0; i < 11; i++) {
         int y = cy + 3 + i;
         bool sel = a->settings_sel == i;
         uint32_t fg = sel ? a->th.accent : a->th.fg;
@@ -1307,7 +1347,8 @@ static void draw_settings(app *a) {
         wisp_screen_text(a->screen, cx + 19, y, cw - 23, vals[i], sel ? a->th.accent2 : a->th.dim,
                          vbg, 0);
         if (sel && choice[i]) {
-            wisp_screen_text(a->screen, cx + 17, y, 2, "\xe2\x97\x80", a->th.accent, a->th.panel, 0);
+            wisp_screen_text(a->screen, cx + 17, y, 2, "\xe2\x97\x80", a->th.accent, a->th.panel,
+                             0);
             wisp_screen_text(a->screen, cx + 19 + (int)strlen(vals[i]) + 1, y, 2, "\xe2\x96\xb6",
                              a->th.accent, a->th.panel, 0);
         } else if (sel && !choice[i]) {
@@ -1315,8 +1356,8 @@ static void draw_settings(app *a) {
                              0);
         }
     }
-    int by = cy + 3 + 10 + 1;
-    bool bsel = a->settings_sel == 10;
+    int by = cy + 3 + 11 + 1;
+    bool bsel = a->settings_sel == 11;
     wisp_screen_text(a->screen, cx + 3, by, cw - 6,
                      a->connected ? "[ Reconnect / apply ]" : "[ Connect ]",
                      bsel ? a->th.accent2 : a->th.accent, a->th.panel, bsel ? WISP_ATTR_BOLD : 0);
@@ -1381,7 +1422,7 @@ static void draw_confirm(app *a) {
     wisp_screen_fill(a->screen, cx, cy, cw, 5, ' ', a->th.fg, a->th.panel, 0);
     wisp_screen_text(a->screen, cx + 2, cy + 1, cw - 4, a->confirm_msg, a->th.fg, a->th.panel,
                      WISP_ATTR_BOLD);
-    wisp_screen_text(a->screen, cx + 2, cy + 3, cw - 4, "y  delete      n  cancel", a->th.dim,
+    wisp_screen_text(a->screen, cx + 2, cy + 3, cw - 4, "y  yes      n  cancel", a->th.dim,
                      a->th.panel, 0);
     draw_hint(a, "y confirm  n / Esc cancel");
 }
@@ -1615,7 +1656,8 @@ static const char *context_id(app *a, char *buf, size_t cap) {
     if (a->view == V_PLAYLISTS && a->pl_pane == 1) {
         const wisp_playlist *p = cur_playlist(a);
         if (p && a->pl_sel[1] < (int)p->track_count) {
-            snprintf(buf, cap, "%s", wisp_model_track(a->model, p->track_ids[a->pl_sel[1]])->ext_id);
+            snprintf(buf, cap, "%s",
+                     wisp_model_track(a->model, p->track_ids[a->pl_sel[1]])->ext_id);
             return buf;
         }
     }
@@ -1670,6 +1712,32 @@ static void action_run(void *arg) {
         case ACT_PL_ADD:
             wisp_subsonic_playlist_add(&a->sub, ac.arg, ac.id);
             break;
+        case ACT_PL_REMOVE:
+            wisp_subsonic_playlist_remove(&a->sub, ac.arg, ac.rating);
+            break;
+        case ACT_PL_REORDER: {
+            wisp_mutex_lock(a->model_mtx);
+            uint32_t pid;
+            char **ids = NULL;
+            char *name = NULL;
+            size_t n = 0;
+            if (wisp_model_find_playlist(a->model, ac.arg, &pid)) {
+                const wisp_playlist *p = wisp_model_playlist(a->model, pid);
+                n = p->track_count;
+                name = wisp_strdup(p->name ? p->name : "");
+                ids = n ? malloc(n * sizeof(char *)) : NULL;
+                for (size_t i = 0; i < n && ids; i++)
+                    ids[i] = wisp_strdup(wisp_model_track(a->model, p->track_ids[i])->ext_id);
+            }
+            wisp_mutex_unlock(a->model_mtx);
+            if (name)
+                wisp_subsonic_playlist_replace(&a->sub, ac.arg, name, (const char *const *)ids, n);
+            for (size_t i = 0; i < n && ids; i++)
+                free(ids[i]);
+            free(ids);
+            free(name);
+            break;
+        }
         case ACT_PL_CREATE: {
             char *newid = NULL;
             if (wisp_subsonic_create_playlist(&a->sub, ac.arg, ac.id[0] ? ac.id : NULL, &newid) ==
@@ -1773,8 +1841,8 @@ static void enter_connected(app *a) {
     if (a->core)
         return;
     char *cache_dir = wisp_dir_path(WISP_DIR_CACHE);
-    a->cache = wisp_cache_new(cache_dir,
-                              a->config.server_count && a->config.servers[0].trust_self_signed);
+    a->cache =
+        wisp_cache_new(cache_dir, a->config.server_count && a->config.servers[0].trust_self_signed);
     free(cache_dir);
     if (a->cache)
         wisp_cache_set_limit(a->cache, (int64_t)a->config.cache_max_mb * 1024 * 1024);
@@ -2349,6 +2417,44 @@ static void handle_playlists(app *a, int key) {
         }
         break;
     }
+    case 'x': {
+        const wisp_playlist *p = cur_playlist(a);
+        if (a->pl_pane == 1 && p && a->pl_sel[1] < (int)p->track_count) {
+            const wisp_track *t = wisp_model_track(a->model, p->track_ids[a->pl_sel[1]]);
+            a->confirm_kind = 2;
+            a->confirm_id = (uint32_t)a->pl_sel[0];
+            a->confirm_index = a->pl_sel[1];
+            snprintf(a->confirm_ext, sizeof a->confirm_ext, "%s", p->ext_id);
+            snprintf(a->confirm_msg, sizeof a->confirm_msg, "Remove \"%s\" from playlist?",
+                     t && t->title ? t->title : "track");
+            a->popup = POP_CONFIRM;
+        }
+        break;
+    }
+    case 'K': {
+        const wisp_playlist *p = cur_playlist(a);
+        if (a->pl_pane == 1 && p && a->pl_sel[1] > 0) {
+            wisp_mutex_lock(a->model_mtx);
+            wisp_model_playlist_move_track(a->model, (uint32_t)a->pl_sel[0], (size_t)a->pl_sel[1],
+                                           -1);
+            wisp_mutex_unlock(a->model_mtx);
+            a->pl_sel[1]--;
+            post(a, ACT_PL_REORDER, NULL, p->ext_id, 0);
+        }
+        break;
+    }
+    case 'J': {
+        const wisp_playlist *p = cur_playlist(a);
+        if (a->pl_pane == 1 && p && a->pl_sel[1] + 1 < (int)p->track_count) {
+            wisp_mutex_lock(a->model_mtx);
+            wisp_model_playlist_move_track(a->model, (uint32_t)a->pl_sel[0], (size_t)a->pl_sel[1],
+                                           +1);
+            wisp_mutex_unlock(a->model_mtx);
+            a->pl_sel[1]++;
+            post(a, ACT_PL_REORDER, NULL, p->ext_id, 0);
+        }
+        break;
+    }
     default:
         transport(a, key);
         break;
@@ -2396,15 +2502,15 @@ static void handle_settings(app *a, int key) {
         return;
     }
     if (key == WISP_KEY_UP) {
-        *sel = (*sel + 10) % 11;
+        *sel = (*sel + 11) % 12;
         return;
     }
     if (key == WISP_KEY_DOWN) {
-        *sel = (*sel + 1) % 11;
+        *sel = (*sel + 1) % 12;
         return;
     }
     bool changed = false;
-    if (*sel <= 5 && (key == WISP_KEY_LEFT || key == WISP_KEY_RIGHT)) {
+    if (*sel <= 6 && (key == WISP_KEY_LEFT || key == WISP_KEY_RIGHT)) {
         int dir = key == WISP_KEY_RIGHT ? 1 : -1;
         if (*sel == 0) {
             a->config.crossfade += dir * 2.0f;
@@ -2429,7 +2535,7 @@ static void handle_settings(app *a, int key) {
             a->config.visualizer = !a->config.visualizer;
         } else if (*sel == 4) {
             a->config.viz_type = (a->config.viz_type + dir + VIZ_COUNT) % VIZ_COUNT;
-        } else {
+        } else if (*sel == 5) {
             int step = a->config.cache_max_mb >= 1024 ? 1024 : 256;
             if (dir < 0 && a->config.cache_max_mb <= 256)
                 step = 256;
@@ -2440,14 +2546,16 @@ static void handle_settings(app *a, int key) {
                 a->config.cache_max_mb = 65536;
             if (a->cache)
                 wisp_cache_set_limit(a->cache, (int64_t)a->config.cache_max_mb * 1024 * 1024);
+        } else {
+            set_str(&a->config.transcode_format, strcmp(transcode_fmt(a), "opus") ? "opus" : "mp3");
         }
         changed = true;
-    } else if (*sel >= 6 && *sel <= 9) {
-        char *f = *sel == 6   ? a->st_name
-                  : *sel == 7 ? a->st_url
-                  : *sel == 8 ? a->st_user
+    } else if (*sel >= 7 && *sel <= 10) {
+        char *f = *sel == 7   ? a->st_name
+                  : *sel == 8 ? a->st_url
+                  : *sel == 9 ? a->st_user
                               : a->st_pass;
-        size_t cap = *sel == 7 ? sizeof a->st_url : sizeof a->st_name;
+        size_t cap = *sel == 8 ? sizeof a->st_url : sizeof a->st_name;
         size_t len = strlen(f);
         if (key == WISP_KEY_BACKSPACE) {
             if (len)
@@ -2456,7 +2564,7 @@ static void handle_settings(app *a, int key) {
             f[len] = (char)key;
             f[len + 1] = '\0';
         }
-    } else if (*sel == 10 && key == WISP_KEY_ENTER) {
+    } else if (*sel == 11 && key == WISP_KEY_ENTER) {
         try_connect(a, a->st_url, a->st_user, a->st_pass, a->st_name);
     }
     if (changed)
@@ -2529,6 +2637,16 @@ static void handle_confirm(app *a, int key) {
                 a->pl_sel[0]--;
             a->pl_pane = 0;
             toast(a, "playlist deleted");
+        } else if (a->confirm_kind == 2) {
+            wisp_mutex_lock(a->model_mtx);
+            wisp_model_playlist_remove_track(a->model, a->confirm_id, (size_t)a->confirm_index);
+            wisp_mutex_unlock(a->model_mtx);
+            post(a, ACT_PL_REMOVE, NULL, a->confirm_ext, a->confirm_index);
+            const wisp_playlist *p = wisp_model_playlist(a->model, a->confirm_id);
+            int tc = p ? (int)p->track_count : 0;
+            if (a->pl_sel[1] >= tc && a->pl_sel[1] > 0)
+                a->pl_sel[1]--;
+            toast(a, "removed from playlist");
         }
         a->popup = POP_NONE;
     } else if (key == 'n' || key == WISP_KEY_ESC) {

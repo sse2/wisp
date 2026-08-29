@@ -2,6 +2,8 @@
 
 #include "common.h"
 
+#include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -220,4 +222,49 @@ void wisp_chan_close(wisp_chan *ch) {
     wisp_cond_broadcast(ch->not_empty);
     wisp_cond_broadcast(ch->not_full);
     wisp_mutex_unlock(ch->mtx);
+}
+
+static _Atomic int g_log_state;
+static wisp_mutex *g_log_mtx;
+
+static wisp_mutex *log_mutex(void) {
+    int expected = 0;
+    if (atomic_compare_exchange_strong(&g_log_state, &expected, 1)) {
+        g_log_mtx = wisp_mutex_new();
+        atomic_store(&g_log_state, 2);
+    } else {
+        while (atomic_load(&g_log_state) != 2)
+            ;
+    }
+    return g_log_mtx;
+}
+
+void wisp_log(const char *fmt, ...) {
+    if (!getenv("WISP_DEBUG"))
+        return;
+    wisp_mutex *m = log_mutex();
+    wisp_mutex_lock(m);
+    static FILE *fh;
+    if (!fh) {
+        char *dir = wisp_dir_path(WISP_DIR_DATA);
+        if (dir) {
+            wisp_mkdirs(dir);
+            char *path = wisp_path_join(dir, "wisp-debug.log");
+            if (path) {
+                fh = wisp_fopen(path, "a");
+                free(path);
+            }
+            free(dir);
+        }
+    }
+    if (fh) {
+        va_list ap;
+        va_start(ap, fmt);
+        fprintf(fh, "%llu  ", (unsigned long long)wisp_now_ms());
+        vfprintf(fh, fmt, ap);
+        fputc('\n', fh);
+        fflush(fh);
+        va_end(ap);
+    }
+    wisp_mutex_unlock(m);
 }
