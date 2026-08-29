@@ -28,8 +28,8 @@ static theme theme_default(void) {
                    0xf5c2e7, 0x45475a, 0xffffff, 0xa6e3a1, 0xf38ba8};
 }
 
-static const char *VIZ_NAMES[] = {"bars", "mirror", "scope", "peaks"};
-enum { VIZ_BARS, VIZ_MIRROR, VIZ_SCOPE, VIZ_PEAKS, VIZ_COUNT };
+static const char *VIZ_NAMES[] = {"bars", "mirror", "scope", "peaks", "off"};
+enum { VIZ_BARS, VIZ_MIRROR, VIZ_SCOPE, VIZ_PEAKS, VIZ_OFF, VIZ_COUNT };
 
 enum { V_CONNECT, V_HOME, V_NOWPLAYING, V_LIBRARY, V_SEARCH, V_PLAYLISTS, V_DETAIL };
 static const char *TAB_NAMES[] = {"", "Home", "Now Playing", "Library", "Search", "Playlists"};
@@ -174,6 +174,9 @@ static uint64_t anim(app *a) {
 }
 static bool viz_on(app *a) {
     return a->config.visualizer && !a->config.reduced_motion;
+}
+static bool full_viz_on(app *a) {
+    return viz_on(a) && a->config.viz_type != VIZ_OFF;
 }
 
 static uint32_t lerp_rgb(uint32_t a, uint32_t b, float t) {
@@ -1124,7 +1127,7 @@ static void draw_nowplaying(app *a) {
     int vy = cy + 5;
     int total = a->h - 4 - vy;
     if (total >= 2) {
-        int viz_rows = viz_on(a) && playing ? (total > 12 ? 8 : total / 2) : 0;
+        int viz_rows = full_viz_on(a) && playing ? (total > 12 ? 8 : total / 2) : 0;
         int main_rows = total - (viz_rows ? viz_rows + 1 : 0);
         if (a->np_lyrics) {
             np_text(a, 2, vy - 1, a->w - 4, "lyrics", a->th.accent, 0);
@@ -1350,7 +1353,7 @@ static void draw_settings(app *a) {
         vals[10][k] = '*';
     vals[10][pl < 63 ? pl : 63] = '\0';
     const char *labels[] = {"Crossfade", "Theme",       "Reduced motion", "Visualizer",
-                            "Viz type",  "Cache limit", "Transcode to",   "Server name",
+                            "Big vis type",  "Cache limit", "Transcode to",   "Server name",
                             "URL",       "Username",    "Password"};
     bool choice[] = {true, true, true, true, true, true, true, false, false, false, false};
     for (int i = 0; i < 11; i++) {
@@ -2060,6 +2063,15 @@ static void find_jump(app *a) {
     }
 }
 
+static void persist_volume(app *a) {
+    if (!a->core)
+        return;
+    wisp_status s = wisp_core_status(a->core);
+    a->config.volume = s.volume;
+    wisp_status_free(&s);
+    wisp_config_save(&a->config);
+}
+
 static void transport(app *a, int key) {
     char idbuf[256];
     switch (key) {
@@ -2089,12 +2101,14 @@ static void transport(app *a, int key) {
         wisp_status s = wisp_core_status(a->core);
         wisp_core_set_volume(a->core, s.volume + 0.05f);
         wisp_status_free(&s);
+        persist_volume(a);
         break;
     }
     case '-': {
         wisp_status s = wisp_core_status(a->core);
         wisp_core_set_volume(a->core, s.volume - 0.05f);
         wisp_status_free(&s);
+        persist_volume(a);
         break;
     }
     case 'm': {
