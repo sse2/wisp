@@ -1141,6 +1141,23 @@ static void draw_nowplaying(app *a) {
             draw_viz_full(a, 2, vzy, a->w - 4, viz_rows, a->th.bg);
         }
     }
+    if (a->core && a->h > 9) {
+        int vy2 = a->h - 3;
+        char vbuf[16];
+        if (s.muted)
+            snprintf(vbuf, sizeof vbuf, "muted");
+        else
+            snprintf(vbuf, sizeof vbuf, "vol %d%%", (int)(s.volume * 100));
+        int vlen = (int)strlen(vbuf);
+        int vizw = viz_on(a) && playing && a->w > 40 ? 14 : 0;
+        int vizx = a->w - 2 - vizw;
+        int volx = vizw ? vizx - 1 - vlen : a->w - 2 - vlen;
+        if (volx < 2)
+            volx = 2;
+        np_text(a, volx, vy2, vlen, vbuf, a->th.dim, 0);
+        if (vizw)
+            draw_viz_bar(a, vizx, vy2, vizw, a->th.bg);
+    }
     if (a->core)
         wisp_status_free(&s);
     draw_hint(a, "\xe2\x86\x91\xe2\x86\x93 pick  Enter play  Space pause  ,/. seek  n/p skip  l "
